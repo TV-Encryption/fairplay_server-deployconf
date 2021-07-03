@@ -1,0 +1,96 @@
+version: '3.8'
+
+volumes:
+  local_postgres_data: {}
+
+secrets:
+  private_key:
+    file: ./secrets/dev_private_key.pem
+  ask:
+    file: ./secrets/ask
+
+services:
+  django: &django
+    build:
+      context: ./fairplay_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-django
+    image: fairplay_server_local_django
+    restart: always
+    depends_on:
+      - postgres
+      - celerybeat
+      - celeryworker
+      - mailhog
+    environment:
+      # General
+      - DJANGO_DEBUG=False
+      - IPYTHONDIR=/app/.ipython
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      # General
+      - DJANGO_SETTINGS_MODULE=config.settings.base
+      - DJANGO_SECRET_KEY
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      - KEYSERVER_BASE_URL
+      - KEYSERVER_TOKEN
+      # Email
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+      # Postgres
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-fairplay_server}
+      - POSTGRES_USER=${POSTGRES_USER:-fairplay_server}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fairplay_server}
+    ports:
+      - "127.0.0.1:${EXTERNAL_PORT_DJANGO:-5000}:5000"
+    secrets:
+      - private_key
+      - ask
+
+  postgres:
+    image: postgres:12.3
+    restart: always
+    volumes:
+      - local_postgres_data:/var/lib/postgresql/data:Z
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-fairplay_server}
+      - POSTGRES_USER=${POSTGRES_USER:-fairplay_server}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fairplay_server}
+
+  mailhog:
+    restart: always
+    image: mailhog/mailhog:v1.0.0
+
+  redis:
+    restart: always
+    image: redis:5.0
+
+  celeryworker:
+    <<: *django
+    image: fairplay_server_local_celeryworker
+    build:
+      context: ./fairplay_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-worker
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+
+  celerybeat:
+    <<: *django
+    image: fairplay_server_local_celerybeat
+    build:
+      context: ./fairplay_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-beat
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []

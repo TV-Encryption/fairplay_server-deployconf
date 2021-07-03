@@ -1,0 +1,4 @@
+.env
+fairplay_server
+secrets/*
+!secrets/.gitkeep
